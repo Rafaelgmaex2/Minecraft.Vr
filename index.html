@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Minecraft VR - Cardboard</title>
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+    #renderCanvas { width: 100%; height: 100%; display: block; }
+    #enter-vr {
+      position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
+      padding: 15px 30px; background: #E91E63; color: white; border: none;
+      border-radius: 10px; font-size: 18px; cursor: pointer; z-index: 100;
+    }
+    #ui {
+      position: absolute; top: 20px; left: 20px; color: white;
+      background: rgba(0,0,0,0.5); padding: 10px; border-radius: 8px; font-size: 14px;
+    }
+    #inventory {
+      position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 10px; background: rgba(0,0,0,0.7); padding: 10px 20px;
+      border-radius: 10px;
+    }
+    .item {
+      width: 50px; height: 50px; border: 3px solid #333; color: white;
+      font-weight: bold; display: flex; align-items: center; justify-content: center;
+      cursor: pointer; border-radius: 8px;
+    }
+    .item.selected { border-color: #4CAF50; background: rgba(76,175,84,0.3); }
+  </style>
+
+  <!-- Babylon.js + WebXR Polyfill -->
+  <script src="https://cdn.jsdelivr.net/npm/@babylonjs/core@6/Legacy/legacy.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babylonjs/gui@6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@webxr-polyfill/[email protected]/dist/webxr-polyfill.js"></script>
+</head>
+<body>
+  <canvas id="renderCanvas"></canvas>
+  <div id="ui">Carregando...</div>
+  <button id="enter-vr" style="display:none">🕶️ Entrar em VR</button>
+  <div id="inventory" style="display:none">
+    <div class="item selected" data-type="grass">G</div>
+    <div class="item" data-type="dirt">D</div>
+    <div class="item" data-type="stone">S</div>
+  </div>
+
+  <script type="text/javascript">
+    let engine, scene, camera;
+    let blocks = {};
+    let materials = {};
+    let currentBlockType = "grass";
+
+    window.addEventListener("load", () => {
+      setTimeout(startApp, 100);
+    });
+
+    function startApp() {
+      const canvas = document.getElementById("renderCanvas");
+
+      engine = new BABYLON.Engine(canvas, true, {
+        preserveDrawingBuffer: true,
+        stencil: true
+      });
+
+      if (!engine) {
+        alert("WebGL não suportado");
+        return;
+      }
+
+      scene = createScene();
+      createMaterials();
+      generateWorld();
+
+      document.getElementById("ui").textContent = "Toque na tela para interagir";
+      document.getElementById("enter-vr").style.display = "block";
+      document.getElementById("inventory").style.display = "flex";
+
+      document.getElementById("enter-vr").addEventListener("click", enterVR);
+
+      document.querySelectorAll("#inventory .item").forEach(item => {
+        item.onclick = () => {
+          document.querySelectorAll("#inventory .item").forEach(i => i.classList.remove("selected"));
+          item.classList.add("selected");
+          currentBlockType = item.getAttribute("data-type");
+        };
+      });
+
+      engine.runRenderLoop(() => {
+        if (scene) scene.render();
+      });
+
+      window.addEventListener("resize", () => engine.resize());
+    }
+
+    function createScene() {
+      const scene = new BABYLON.Scene();
+      scene.clearColor = new BABYLON.Color3(0.8, 0.9, 1.0);
+
+      camera = new BABYLON.DeviceOrientationCamera("camera", new BABYLON.Vector3(0, 1.6, -5), scene);
+      camera.attachControl(true, true);
+      camera.speed = 0.1;
+
+      const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
+      light.intensity = 0.8;
+
+      return scene;
+    }
+
+    function createMaterials() {
+      materials.grass = new BABYLON.StandardMaterial("grass", scene);
+      materials.grass.diffuseColor = new BABYLON.Color3(0.2, 0.8, 0.2);
+
+      materials.dirt = new BABYLON.StandardMaterial("dirt", scene);
+      materials.dirt.diffuseColor = new BABYLON.Color3(0.4, 0.2, 0.1);
+
+      materials.stone = new BABYLON.StandardMaterial("stone", scene);
+      materials.stone.diffuseColor = new BABYLON.Color3(0.5, 0.5, 0.5);
+    }
+
+    function generateWorld() {
+      for (let x = -12; x <= 12; x += 2) {
+        for (let z = -12; z <= 12; z += 2) {
+          const y = Math.floor(Math.sin(x / 4) * 2 + Math.cos(z / 4) * 2);
+          createBlock(x, y, z, "grass");
+          if (y > -1) createBlock(x, y - 1, z, "dirt");
+          if (y > -3) createBlock(x, y - 2, z, "stone");
+        }
+      }
+    }
+
+    function createBlock(x, y, z, type) {
+      const key = `${x},${y},${z}`;
+      if (blocks[key]) return;
+      const box = BABYLON.MeshBuilder.CreateBox("block", { size: 1 }, scene);
+      box.position.set(x, y + 0.5, z);
+      box.material = materials[type];
+      box.checkCollisions = true;
+      box.isPickable = true;
+      blocks[key] = box;
+    }
+
+    async function enterVR() {
+      try {
+        const vrHelper = await scene.createDefaultVRExperience({
+          createDeviceOrientationCamera: false
+        });
+        await vrHelper.webVROptions.enterVR();
+        document.getElementById("enter-vr").style.display = "none";
+        document.getElementById("ui").textContent = "🟢 Em VR! Mova a cabeça.";
+      } catch (e) {
+        alert("Erro ao entrar em VR: " + e.message);
+      }
+    }
+
+    document.getElementById("renderCanvas").addEventListener("click", function() {
+      const ray = camera.getForwardRay(10);
+      const hit = scene.pickWithRay(ray);
+      if (hit && hit.pickedMesh) {
+        const pos = hit.pickedMesh.position;
+        const x = Math.round(pos.x);
+        const y = Math.round(pos.y - 0.5);
+        const z = Math.round(pos.z);
+        if (blocks[`${x},${y},${z}`]) {
+          blocks[`${x},${y},${z}`].dispose();
+          delete blocks[`${x},${y},${z}`];
+        }
+      }
+    });
+  </script>
+</body>
+</html>
